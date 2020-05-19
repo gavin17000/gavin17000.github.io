@@ -1,0 +1,224 @@
+---
+title: "CMSC 320 Final Project"
+output: html_document
+---
+
+### By Gavin Prebilic and Ryan Vinh
+
+# Relating Different Measures of National Prosperity with Gapminder
+
+There are many different statistics that can be used as a proxy for the success of a particular country. The most common indicator is income per person. The first problem with this incidicator is that it tells us nothing about the range and distribution of incomes. In one country, everyone might have about the same income, but another country with the same income per person might have massive inequality, with most people in poverty and a class of incredibly wealthy people. Fortunately, there's a way of describing inequality of income: the Gini coefficient, which ranges from 0 to 1, where values near 0 indicate perfect equality, and values near 1 indicate total inequality (a value of exactly 1 would require that one person gets all the income and everyone else gets none).
+
+Measuring prosperity can get even more complicated from here, however. As the saying goes, money can't buy happiness. How can we measure happiness? There's no single number that tells us how happy a country is, and any such statistic would be quite subjective. One way we might try to understand happiness is by measuring a couple different health outcomes, where health can be both physical and mental. Obviously mental health is very connected to happiness, however the statistics are limited. The only mental health statistic we will use here is suicide rate. Of course, physical health is also important, as we would expect physically healthy people to be more happy. We will use two very common physical health outcomes: life expectancy and child mortality.
+
+Armed with 5 different statistics: income per person, GINI coefficient, suicide rate, life expectancy, and child mortality, we will in essence try to understand to what extent can money buy happiness. That is, how do these different prosperity indicators relate to each other?
+
+First things first, we will be using the tidyverse and broom libraries throughout our exploration of this data. You can check out the tidyverse documentation here: https://www.rdocumentation.org/packages/tidyverse/versions/1.3.0
+```{r, results='hide', message=FALSE}
+library(tidyverse)
+library(broom)
+```
+
+Next, we need to retrieve the data. Go to https://www.gapminder.org/data/ and click on "Select an indicator". Three of our indicators are right at the top: 
+![indicators](C:/Users/gavin/OneDrive/Documents/CMSC320 Projects/Pic1.png)
+Click on one, wait for the data to load, and download as csv. 
+![download](C:/Users/gavin/OneDrive/Documents/CMSC320 Projects/Pic2.png)
+Do the same for the other indicators. Two of our indicators are hidden in folders. To find Gini coefficient, go to the Economy folder, then Inequality.
+![gini](C:/Users/gavin/OneDrive/Documents/CMSC320 Projects/Pic3.png)
+Similarly, go to the Health -> Mental Health folder and select Suicides/100k people.
+
+Now that we have these data sets downloaded, we have to load them into R. Use the read_csv function, and make sure the argument matches the folder and name of the csv files on your computer (I renamed them on my computer for convenience).
+```{r}
+mortality1 <- read.csv("C:/Users/gavin/Downloads/child_mortality.csv")
+income1 <- read.csv("C:/Users/gavin/Downloads/income.csv")
+life_exp1 <- read.csv("C:/Users/gavin/Downloads/life_expectancy.csv")
+gini1 <- read.csv("C:/Users/gavin/Downloads/gini.csv")
+suicide1 <- read.csv("C:/Users/gavin/Downloads/suicides.csv")
+```
+Now each of these variables is a data frame holding the data from the csv file. Let's take a look at what one of these data frames looks like.
+```{r}
+head(select(mortality1, country, X1800, X2014, X2019, X2100))
+```
+Notice that each row is a country and each column (except the first) is a year. This is a perfectly normal way for the data to be stored, but it is not a 'tidy' way. In a tidy data set, we want each column to represent a different attribute of our data. With our data, the attributes are country, year, and child mortality. As it is now, the year attribute is being used as a label for columns, and the child mortality attribute is being held in numerous different columns. Just as an exercise, let's convert this to a tidy data set. Tidy data can make it much easier to manipulate and analyze our data later. Thankfully, tidyverse and R provide tools to make this conversion pretty easy.
+```{r}
+tidy_mortality <- mortality1 %>%
+  gather(year, child_mortality, -country)
+head(tidy_mortality)
+```
+This code snippet makes use of a pipeline, indicated by the %>% symbol. A pipeline allows you to perform some operation on a data frame and send the result to the next line, as long as a line ends with %>%, letting you combine multiple operations easily. Although the pipeline here is only one operation, we will be using pipelines a lot more later on. The operation we used in this pipeline is gather, and the arguments we gave tell it to make two new columns named year and child_mortality out of all the columns of our original table, except the country column. We then store the result in a new variable called tidy_mortality. The number of rows in the new table exploded to 58,695, however the number of columns is now just three, rather than 302 as before.
+
+For the rest of our analysis, however, we don't need to tidy our data frames in this way. The gapminder data includes years all the way back to 1800, but for our purposes, we only care about the relationship of these statistics in the present day. We can use a pipeline with the select and rename operations to remove all years except 2014, rename the columns to indicate the statistic being stored, rather than the year, and store the results back in the same variables.
+```{r}
+mortality <- mortality1 %>%
+  select(country, X2014) %>%
+  rename(child_mortality = X2014)
+income <- income1 %>%
+  select(country, X2014) %>%
+  rename(avg_income = X2014)
+life_exp <- life_exp1 %>%
+  select(country, X2014) %>%
+  rename(life_expectancy = X2014)
+gini <- gini1 %>%
+  select(country, X2014) %>%
+  rename(gini_coeff = X2014)
+suicide <- suicide1 %>%
+  select(country, X2014) %>%
+  rename(suicide_rate = X2014)
+head(mortality)
+```
+
+Now that we have five data frames with only the data we want, we need to combine them into one. To do this we use the join function. Since each of our statistics is labelled with a country name, joining them will result in one country label with five different statistics.
+```{r, message=FALSE, warning=FALSE}
+dataf <- mortality %>%
+  inner_join(income) %>%
+  inner_join(life_exp) %>%
+  inner_join(gini) %>%
+  full_join(suicide) %>%
+  filter(!(country %in% c("San Marino", "St. Kitts and Nevis"))) #Countries missing data for all variables
+head(dataf)
+```
+
+Now there are a variety of ways we might want to explore the data in this table. An important part of exploratory data analysis is visualization. If we want to see the relationship between average income and life expectancy, for example, we can use the ggplot function, which is capable of making many different plots. We will make a scatter plot with geom_point.
+```{r}
+ggplot(dataf, mapping = aes(x = avg_income, y = life_expectancy)) + geom_point()
+```
+
+From this we can see that there seems to be a positive association between per capita income and life expectancy. What does this relationship look like as a line of best fit?
+```{r}
+ggplot(dataf, mapping=aes(x = avg_income, y = life_expectancy)) +
+  geom_point() + geom_smooth(method = lm, formula = y ~ x, se=FALSE)
+```
+
+We can inspect the particular values of this line of best fit closer using the tidy function.
+```{r}
+fit <- lm(life_expectancy~avg_income, data=dataf)
+tidy(fit)
+```
+From this we see that life expectancy increases by an average of 0.000266 for each dollar increase in per capita income. This is a very small coefficient, but the p-value for whether this coefficient differs from 0 is still statistically significant at 2.550*10^-23. The small coefficient is simply due to the vastly different scales of our two variables.
+
+The glance function provides even more information, including the R-squared value, which is important because it tells us how much variance in life expectancy is explained by our formula in income.
+```{r}
+glance(fit)
+```
+Our R-squared of 0.415 is pretty bad as far as models go, as it tells us that 59% of the variance in life expectancy is unexplained in our model.
+
+This makes sense because the relationship doesn't really look linear. We could fit various types of formulas to the data, such as a polynomial or exponential function. Let's try a log function.
+```{r}
+ggplot(dataf, mapping=aes(x = avg_income, y = life_expectancy)) +
+  geom_point() + geom_smooth(method = lm, formula = y ~ log(x), se=FALSE)
+```
+Which looks slightly better. Let's look at the corresponding numbers.
+```{r}
+fit <- lm(life_expectancy~log(avg_income), data=dataf)
+glance(fit)
+```
+Our R-squared of 0.678 is much better than the linear model, indicating that a log equation better matches our data, but much of the variance is still unexplained. We can perform a regression on multiple variables, and if our R-squared improves then that means the extra variables accounts for some of the variance that the first variable missed. Let's add a term for the Gini coefficient to our regression formula.
+```{r}
+fit <- lm(life_expectancy~log(avg_income)+gini_coeff, data=dataf)
+glance(fit)
+```
+The R-squared improves slightly, but not very much. We can go farther and add a term for the interaction between income and Gini coefficient, in which the two variables are multiplied.
+```{r}
+fit <- lm(life_expectancy~log(avg_income)+gini_coeff+gini_coeff*log(avg_income), data=dataf)
+glance(fit)
+```
+Again, the increase in R-squared is marginal. It might make more sense to add a variable for child mortality, which is directly related to health and life expectancy. We'll also add two interaction terms for child mortality with each of our previous variables.
+```{r}
+fit <- lm(life_expectancy~log(avg_income)+gini_coeff+gini_coeff*log(avg_income)+child_mortality+child_mortality*log(avg_income)+child_mortality*gini_coeff, data=dataf)
+glance(fit)
+```
+Our R-squared has improved all the way to 0.852, showing that the addition of child mortality improved our model by about 14 percentage points. However, the formula becomes quite complicated very quickly as we add more variables with interactions with other variables.
+```{r}
+tidy(fit)
+```
+Interestingly, all of our variable coefficients are statisticially significant, although some of the values are surprising when we consider their implication. For example, the coefficient for child mortality is 0.360, which seems to imply that an increase in child mortality also increases life expectancy, although the situation is more complicated when we consider the interaction terms. Furthermore, while we kept the log transformation for average income throughout every version of our model, the other variables we simply left linear. It's likely that the best formula for our model would have transformation for other variables, be it logarithmic, exponential, or polynomial, but determining these would be quite tedious. 
+
+The building up of this model is meant to illustrate a fairly simple way of relating different variables. We made our model to predict life expectancy, but we could have predicted child mortality, gini coefficient, etc. just the same. We could have used different statistics available on Gapminder or elsewhere, and we could have used a completely different method of prediction rather than least squares regression. This relating of different variables in data is the essence of data science.
+
+## Filling the Gaps in Suicide Rate Statistics
+
+Now we will turn to a less exploratory use of these variables. Recall our combined dataframe with statistics for 2014.
+```{r}
+head(select(dataf, country, child_mortality, avg_income, suicide_rate))
+```
+Notice that unlike the first four statistics, much of the data for suicide rate is missing, even for first world countries like the United States that we could expect to have good data on. This missing data is also present in any year (we selected 2014 because it's a fairly recent year that has less missing data than surrounding years). We would like to use the data we already have to try to predict the suicide rate of countries with missing data and thus fill in the gaps.
+
+The first method we can try is a linear regression using all four of our predictive variables and all of their interactions, adding terms for the products of more than two variables, which we didn't include before.
+```{r}
+training_set <- dataf %>%
+  filter(!is.na(suicide_rate))
+
+fit <- lm(suicide_rate~child_mortality+avg_income+life_expectancy+gini_coeff+child_mortality*avg_income+child_mortality*life_expectancy+child_mortality*gini_coeff+avg_income*life_expectancy+avg_income*gini_coeff+life_expectancy*gini_coeff+child_mortality*avg_income*life_expectancy+child_mortality*avg_income*gini_coeff+child_mortality*life_expectancy*gini_coeff+avg_income*life_expectancy*gini_coeff+child_mortality*avg_income*life_expectancy*gini_coeff, data=training_set)
+head(tidy(fit))
+```
+Only one of these terms is statistically significant, the product of all the variables other than average income. Three other terms are nearly significant: child mortality, child mortality times life expectancy, and child mortality times Gini coefficient. It's safe to say that child mortality is the most important of these variables for predicting suicide rate, while average income is the least significant (perhaps evidence that money doesn't buy happiness?).
+```{r}
+glance(fit)
+```
+The R-squared for this model isn't great. Even worse, the adjusted R-squared, which alters the normal R-squared to account for the number of variables used in the model, is much lower, which indicates we might by overfitting by using so many variables with limited data.
+
+We've run into a common problem in machine learning, needing more data. While the single year 2014 was enough for our initial exploration of the data, we now need to return to our earlier idea of tidying the data so that we have data for different years. This will greatly increase the amount of data we have to train the model, although it will also add the year variable and its interactions with the other variables.
+```{r, warning=FALSE}
+tidy_mortality <- tidy_mortality %>%
+  separate(year, c("r", "year"), sep=1) %>%
+  select(-r) %>%
+  type_convert(col_types = cols(year=col_integer()))
+tidy_income <- income1 %>%
+  gather(year, avg_income, -country) %>%
+  separate(year, c("r", "year"), sep=1) %>%
+  select(-r) %>%
+  type_convert(col_types = cols(year=col_integer()))
+tidy_life_exp <- life_exp1 %>%
+  gather(year, life_expectancy, -country) %>%
+  separate(year, c("r", "year"), sep=1) %>%
+  select(-r) %>%
+  type_convert(col_types = cols(year=col_integer()))
+tidy_gini <- gini1 %>%
+  gather(year, gini_coeff, -country) %>%
+  separate(year, c("r", "year"), sep=1) %>%
+  select(-r) %>%
+  type_convert(col_types = cols(year=col_integer()))
+tidy_suicide <- suicide1 %>%
+  gather(year, suicide_rate, -country) %>%
+  separate(year, c("r", "year"), sep=1) %>%
+  select(-r) %>%
+  type_convert(col_types = cols(year=col_integer()))
+big_df <- tidy_mortality %>%
+  full_join(tidy_income, by=c("country", "year")) %>%
+  full_join(tidy_life_exp, by=c("country", "year")) %>%
+  full_join(tidy_gini, by=c("country", "year")) %>%
+  full_join(tidy_suicide, by=c("country", "year")) %>%
+  filter(!is.na(child_mortality)) %>%
+  filter(!is.na(avg_income)) %>%
+  filter(!is.na(life_expectancy)) %>%
+  filter(!is.na(gini_coeff))
+head(select(big_df, country, year, child_mortality, avg_income, life_expectancy))
+```
+We can use a shortcut to avoid writing all the interaction terms. Simply put the formula as the product of all the variables and the other terms will be automatically added.
+```{r}
+training_set <- big_df %>%
+  filter(!is.na(suicide_rate))
+fit <- lm(suicide_rate~year*child_mortality*avg_income*life_expectancy*gini_coeff, data=training_set)
+head(select(tidy(fit), term, estimate, p.value))
+```
+With the added data, most of the coefficients are now statistically significant.
+```{r}
+glance(fit)
+```
+Unfortunately, the R-squared is now lower. However, the difference is that the adjusted R-squared is very close to the actual R-squared, meaning we are not overfitting like before.
+
+Now we can finally see the predictions that our model makes for countries missing suicide rate data in 2014.
+```{r}
+pred_df <- big_df %>%
+  filter(year==2014) %>%
+  filter(is.na(suicide_rate))
+res <- predict(fit, pred_df)
+pred_df["suicide_rate"] = res
+head(select(pred_df, year, child_mortality, avg_income, suicide_rate))
+```
+
+
+
+
+
+
